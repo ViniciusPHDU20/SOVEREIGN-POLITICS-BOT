@@ -107,8 +107,8 @@ async fn rewrite_with_gemini(req_client: &ReqwestClient, title: &str, summary: &
         return None;
     }
 
-    // Usando gemini-pro (1.0) que é imune a bloqueios de conta nova/antiga e é 100% free
-    let url = format!("https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key={}", api_key);
+    // Usando gemini-flash-latest que sempre aponta para o motor livre e atualizado do Google
+    let url = format!("https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key={}", api_key);
     
     let prompt = format!(
         "Você é um renomado jornalista investigativo e analista político brasileiro. \
