@@ -40,4 +40,4 @@ jobs:
           git config --global user.email "bot@sovereign.node"
           git add posted_news.json
           git commit -m "🧠 Intel: Atualizando histórico de política [Skip CI]" || echo "Sem novidades para salvar."
-          git push https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }} main
+          git push https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }} master
