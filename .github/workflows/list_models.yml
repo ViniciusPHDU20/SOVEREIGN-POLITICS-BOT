@@ -1,0 +1,11 @@
+name: List Models
+on: workflow_dispatch
+jobs:
+  list:
+    runs-on: ubuntu-latest
+    steps:
+      - name: List Gemini Models
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          curl -s "https://generativelanguage.googleapis.com/v1beta/models?key=${GEMINI_API_KEY}"
