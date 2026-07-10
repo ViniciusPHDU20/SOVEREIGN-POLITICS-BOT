@@ -106,7 +106,7 @@ async fn rewrite_with_gemini(req_client: &ReqwestClient, title: &str, summary: &
         return None;
     }
 
-    let url = format!("https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro-latest:generateContent?key={}", api_key);
+    let url = format!("https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key={}", api_key);
     let system_prompt = "Você é um renomado jornalista investigativo e analista político brasileiro. \
         Seu objetivo é pegar notícias e escrever comentários afiados, analíticos e profundos nas suas redes sociais (X/Instagram). \
         Não aja como um robô resumidor. Seja humano, orgânico e intelectual. \
