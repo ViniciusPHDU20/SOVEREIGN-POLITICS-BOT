@@ -1,0 +1,43 @@
+name: Sovereign Politics Intel
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+
+jobs:
+  run-politics-bot:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Cache Cargo Registry
+        uses: actions/cache@v3
+        with:
+          path: ~/.cargo/registry
+          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+          
+      - name: Cache Cargo Build
+        uses: actions/cache@v3
+        with:
+          path: target
+          key: ${{ runner.os }}-cargo-build-${{ hashFiles('**/Cargo.lock') }}
+          
+      - name: Build & Run Rust Bot
+        env:
+          DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          cargo run --release
+          
+      - name: Persist History
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git config --global user.name "Sovereign-Bot"
+          git config --global user.email "bot@sovereign.node"
+          git add posted_news.json
+          git commit -m "🧠 Intel: Atualizando histórico de política [Skip CI]" || echo "Sem novidades para salvar."
+          git push https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }} main
