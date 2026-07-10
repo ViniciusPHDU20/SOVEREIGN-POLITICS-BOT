@@ -106,23 +106,22 @@ async fn rewrite_with_gemini(req_client: &ReqwestClient, title: &str, summary: &
         return None;
     }
 
-    let url = format!("https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key={}", api_key);
-    let system_prompt = "Você é um renomado jornalista investigativo e analista político brasileiro. \
+    let url = format!("https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro-latest:generateContent?key={}", api_key);
+    
+    let prompt = format!(
+        "Você é um renomado jornalista investigativo e analista político brasileiro. \
         Seu objetivo é pegar notícias e escrever comentários afiados, analíticos e profundos nas suas redes sociais (X/Instagram). \
         Não aja como um robô resumidor. Seja humano, orgânico e intelectual. \
         **OBRIGAÇÃO CRÍTICA:** Você DEVE escrever um texto longo e denso. Você é OBRIGADO a desenvolver no mínimo 3 parágrafos robustos (cerca de 200 a 300 palavras no total) dissecando o impacto real que o fato traz para a sociedade, economia ou política. \
         Faça uma análise crítica e reflexiva, mantendo a imparcialidade jornalística e baseando-se estritamente na verdade dos fatos fornecidos. \
-        Não invente dados. Use um tom de conversa de alto nível de um jornalista de elite, com poucos (mas cirúrgicos) emojis. NUNCA responda com apenas uma frase.";
-
-    let user_prompt = format!("Escreva sua coluna analítica profunda sobre esta notícia:\n\nTítulo: {}\nResumo: {}", title, summary);
+        NUNCA responda com apenas uma frase. Se a notícia for curta, crie um contexto analítico profundo em torno das implicações dela.\n\n\
+        Notícia a ser dissecada:\n\
+        Título: {}\nResumo: {}", title, summary
+    );
 
     let body = json!({
-        "systemInstruction": {
-            "parts": [{"text": system_prompt}]
-        },
         "contents": [{
-            "role": "user",
-            "parts": [{"text": user_prompt}]
+            "parts": [{"text": prompt}]
         }],
         "generationConfig": {
             "temperature": 0.8
@@ -148,6 +147,20 @@ async fn rewrite_with_gemini(req_client: &ReqwestClient, title: &str, summary: &
 }
 
 async fn fetch_and_post_news(ctx: &Context, channel_id: ChannelId) {
+    println!("[*] Limpando as postagens curtas e erros anteriores no Discord...");
+    if let Ok(messages) = channel_id.messages(&ctx.http, |r| r.limit(50)).await {
+        let mut msgs = messages;
+        msgs.sort_by_key(|m| m.timestamp);
+        if msgs.len() > 1 {
+            // Mantém apenas a mais recente (a última enviada)
+            for m in msgs.iter().take(msgs.len() - 1) {
+                let _ = m.delete(&ctx.http).await;
+                tokio::time::sleep(std::time::Duration::from_millis(1000)).await; // Evita rate limit
+            }
+        }
+    }
+    println!("[*] Canal limpo com sucesso!");
+
     let mut history = load_history();
     let req_client = ReqwestClient::builder()
         .user_agent("Mozilla/5.0 Sovereign Intel Bot")
