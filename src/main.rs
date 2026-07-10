@@ -6,7 +6,7 @@ use serenity::{
     model::channel::ChannelType,
     Client as SerenityClient, // Alias para diferenciar do reqwest::Client
 };
-use tokio::time::{sleep, Duration};
+use tokio;
 use reqwest::Client as ReqwestClient;
 use rss::Channel;
 use std::{collections::HashSet, env, fs, fs::File, io::BufReader};
@@ -193,9 +193,11 @@ async fn fetch_and_post_news(ctx: &Context, channel_id: ChannelId) {
     }
 
     // Curadoria Humana Aleatória: Escolhe apenas 1 notícia entre todas as fontes
-    let mut rng = rand::thread_rng();
-    all_news.shuffle(&mut rng);
-    let chosen = &all_news[0];
+    {
+        let mut rng = rand::thread_rng();
+        all_news.shuffle(&mut rng);
+    }
+    let chosen = all_news.remove(0);
 
     println!("[+] Curadoria Humana escolheu: {} -> Acionando Gemini...", chosen.title);
 
