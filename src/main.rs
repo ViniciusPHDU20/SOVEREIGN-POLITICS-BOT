@@ -135,8 +135,14 @@ async fn rewrite_with_gemini(req_client: &ReqwestClient, title: &str, summary: &
                 if let Some(text) = candidates[0]["content"]["parts"][0]["text"].as_str() {
                     return Some(text.to_string());
                 }
+            } else {
+                println!("[ERRO-GEMINI] A resposta falhou: {:?}", json_resp);
             }
+        } else {
+            println!("[ERRO-GEMINI] Falha ao decodificar JSON da API.");
         }
+    } else {
+        println!("[ERRO-GEMINI] Falha ao enviar request HTTP.");
     }
     None
 }
