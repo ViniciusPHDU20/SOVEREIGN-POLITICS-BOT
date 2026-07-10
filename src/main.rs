@@ -13,6 +13,7 @@ use std::{collections::HashSet, env, fs, fs::File, io::BufReader};
 use chrono::Local;
 use serde_json::json;
 use dotenv::dotenv;
+use rand::seq::SliceRandom;
 
 const TARGET_GUILD_ID: u64 = 1523719297858277517;
 const HISTORY_FILE: &str = "posted_news.json";
@@ -107,10 +108,11 @@ async fn rewrite_with_gemini(req_client: &ReqwestClient, title: &str, summary: &
 
     let url = format!("https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro-latest:generateContent?key={}", api_key);
     let prompt = format!(
-        "Você é um jornalista político de elite brasileiro, totalmente isento e imparcial. \
-        Reescreva a notícia a seguir para um post nas redes sociais (Instagram/X). \
-        O texto deve ser direto, prender a atenção do leitor, não demonstrar viés ideológico e conter emojis pertinentes. \
-        Evite opiniões, foque nos fatos de forma jornalística. \n\n\
+        "Você é um renomado jornalista investigativo e analista político brasileiro. \
+        Acabou de sentar no PC para escrever um comentário afiado nas suas redes sociais (X/Instagram) sobre a notícia abaixo. \
+        Não aja como um robô programado ou um simples resumidor de notícias. Seja humano, orgânico e profundo. \
+        Comente sobre o impacto real que esse fato traz para a sociedade e traga uma reflexão valiosa, sempre mantendo a imparcialidade jornalística e baseando-se estritamente na verdade dos fatos. \
+        Não invente dados. Use um tom de conversa de alto nível, com poucos (mas cirúrgicos) emojis.\n\n\
         Título Original: {}\nResumo: {}", title, summary
     );
 
@@ -119,7 +121,7 @@ async fn rewrite_with_gemini(req_client: &ReqwestClient, title: &str, summary: &
             "parts": [{"text": prompt}]
         }],
         "generationConfig": {
-            "temperature": 0.3
+            "temperature": 0.7
         }
     });
 
@@ -142,21 +144,27 @@ async fn fetch_and_post_news(ctx: &Context, channel_id: ChannelId) {
         .build()
         .unwrap();
 
+    struct NewsItem {
+        title: String,
+        link: String,
+        summary: String,
+        image_url: Option<String>,
+        source_name: String,
+    }
+
+    let mut all_news = Vec::new();
+
     for source in SOURCES {
         if let Ok(response) = req_client.get(source.url).send().await {
             if let Ok(bytes) = response.bytes().await {
                 if let Ok(channel) = Channel::read_from(&bytes[..]) {
-                    
-                    for item in channel.items().iter().take(2) {
+                    for item in channel.items().iter().take(5) { // Puxa as 5 mais recentes
                         if let Some(link) = item.link() {
-                            let link = link.to_string();
-                            if !history.contains(&link) {
+                            let link_str = link.to_string();
+                            if !history.contains(&link_str) {
                                 let title = item.title().unwrap_or("Sem Título").to_string();
                                 let summary = item.description().unwrap_or("Sem Resumo").to_string();
                                 
-                                println!("[+] Nova Notícia Encontrada: {} -> Acionando Gemini...", title);
-                                
-                                // Extração de Imagem
                                 let mut image_url = None;
                                 if let Some(enclosure) = item.enclosure() {
                                     image_url = Some(enclosure.url().to_string());
@@ -168,42 +176,57 @@ async fn fetch_and_post_news(ctx: &Context, channel_id: ChannelId) {
                                     }
                                 }
                                 
-                                // IA Engine
-                                let clean_summary = summary.replace("<p>", "").replace("</p>", "").replace("<br>", "\n");
-                                let final_text = match rewrite_with_gemini(&req_client, &title, &clean_summary).await {
-                                    Some(ai_text) => ai_text,
-                                    None => clean_summary, // Fallback se a IA falhar
-                                };
-
-                                let res = channel_id.send_message(&ctx.http, |m| {
-                                    m.embed(|e| {
-                                        let mut embed = e.title(format!("⚖️ {}", title))
-                                         .url(&link)
-                                         .description(&final_text)
-                                         .color(0x00FF00) // Verde Brasileiro / Isento
-                                         .author(|a| a.name(source.name))
-                                         .footer(|f| f.text("🤖 IA de Monitoramento Político Imparcial | Sovereign Intel"));
-                                         
-                                        if let Some(img) = &image_url {
-                                            embed = embed.image(img);
-                                        }
-                                        embed
-                                    })
-                                }).await;
-
-                                if let Err(why) = res {
-                                    println!("Erro ao enviar mensagem: {:?}", why);
-                                } else {
-                                    history.insert(link);
-                                    save_history(&history);
-                                    return; // Apenas 1 post por ciclo de 15m
-                                }
+                                all_news.push(NewsItem {
+                                    title, link: link_str, summary, image_url, source_name: source.name.to_string()
+                                });
                             }
                         }
                     }
                 }
             }
         }
+    }
+
+    if all_news.is_empty() {
+        println!("[*] Nenhuma notícia nova para curadoria humana neste ciclo.");
+        return;
+    }
+
+    // Curadoria Humana Aleatória: Escolhe apenas 1 notícia entre todas as fontes
+    let mut rng = rand::thread_rng();
+    all_news.shuffle(&mut rng);
+    let chosen = &all_news[0];
+
+    println!("[+] Curadoria Humana escolheu: {} -> Acionando Gemini...", chosen.title);
+
+    let clean_summary = chosen.summary.replace("<p>", "").replace("</p>", "").replace("<br>", "\n");
+    let final_text = match rewrite_with_gemini(&req_client, &chosen.title, &clean_summary).await {
+        Some(ai_text) => ai_text,
+        None => clean_summary,
+    };
+
+    let res = channel_id.send_message(&ctx.http, |m| {
+        m.embed(|e| {
+            let mut embed = e.title(format!("🖋️ {}", chosen.title))
+             .url(&chosen.link)
+             .description(&final_text)
+             .color(0x000000) // Preto Clássico (Jornal)
+             .author(|a| a.name(&chosen.source_name))
+             .footer(|f| f.text("📝 Análise Independente | Sovereign Intel"));
+             
+            if let Some(img) = &chosen.image_url {
+                embed = embed.image(img);
+            }
+            embed
+        })
+    }).await;
+
+    if let Err(why) = res {
+        println!("Erro ao enviar mensagem: {:?}", why);
+    } else {
+        history.insert(chosen.link.clone());
+        save_history(&history);
+        println!("[OK] Post orgânico realizado com sucesso.");
     }
 }
 
