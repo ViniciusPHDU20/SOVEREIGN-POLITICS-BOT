@@ -100,34 +100,37 @@ fn save_history(history: &HashSet<String>) {
     }
 }
 
-async fn rewrite_with_grok(req_client: &ReqwestClient, title: &str, summary: &str) -> Option<String> {
-    let api_key = env::var("XAI_API_KEY").unwrap_or_default();
+async fn rewrite_with_gemini(req_client: &ReqwestClient, title: &str, summary: &str) -> Option<String> {
+    let api_key = env::var("GEMINI_API_KEY").unwrap_or_default();
     if api_key.is_empty() {
-        println!("[ERRO] XAI_API_KEY não encontrada no ambiente.");
+        println!("[ERRO] GEMINI_API_KEY não encontrada no ambiente.");
         return None;
     }
 
-    let url = "https://api.x.ai/v1/chat/completions";
-    let system_prompt = "Você é um renomado jornalista investigativo e analista político brasileiro. \
+    // Usando gemini-pro (1.0) que é imune a bloqueios de conta nova/antiga e é 100% free
+    let url = format!("https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key={}", api_key);
+    
+    let prompt = format!(
+        "Você é um renomado jornalista investigativo e analista político brasileiro. \
         Seu objetivo é pegar notícias e escrever comentários afiados, analíticos e profundos nas suas redes sociais (X/Instagram). \
         Não aja como um robô resumidor. Seja humano, orgânico e intelectual. \
-        **OBRIGAÇÃO CRÍTICA:** Você DEVE escrever um texto longo e denso. Você é OBRIGADO a desenvolver no mínimo 3 parágrafos robustos (cerca de 200 a 300 palavras no total) dissecando o impacto real que o fato traz para a sociedade, economia ou política. \
+        **OBRIGAÇÃO CRÍTICA:** Você DEVE escrever um texto longo e denso. Você é OBRIGADO a desenvolver no mínimo 3 parágrafos robustos dissecando o impacto real que o fato traz para a sociedade, economia ou política. \
         Faça uma análise crítica e reflexiva, mantendo a imparcialidade jornalística e baseando-se estritamente na verdade dos fatos fornecidos. \
-        NUNCA responda com apenas uma frase. Se a notícia for curta, crie um contexto analítico profundo em torno das implicações dela.";
-
-    let user_prompt = format!("Notícia a ser dissecada:\nTítulo: {}\nResumo: {}", title, summary);
+        NUNCA responda com apenas uma frase. Se a notícia for curta, crie um contexto analítico profundo em torno das implicações dela.\n\n\
+        Notícia a ser dissecada:\n\
+        Título: {}\nResumo: {}", title, summary
+    );
 
     let body = json!({
-        "model": "grok-beta",
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt}
-        ],
-        "temperature": 0.8
+        "contents": [{
+            "parts": [{"text": prompt}]
+        }],
+        "generationConfig": {
+            "temperature": 0.8
+        }
     });
 
-    let res = req_client.post(url)
-        .header("Authorization", format!("Bearer {}", api_key))
+    let res = req_client.post(&url)
         .header("Content-Type", "application/json")
         .json(&body)
         .send()
@@ -135,42 +138,32 @@ async fn rewrite_with_grok(req_client: &ReqwestClient, title: &str, summary: &st
 
     if let Ok(response) = res {
         if let Ok(json) = response.json::<serde_json::Value>().await {
-            if let Some(choices) = json.get("choices") {
-                if let Some(first_choice) = choices.get(0) {
-                    if let Some(message) = first_choice.get("message") {
-                        if let Some(text) = message.get("content") {
-                            return Some(text.as_str().unwrap_or("").to_string());
+            if let Some(candidates) = json.get("candidates") {
+                if let Some(first) = candidates.get(0) {
+                    if let Some(content) = first.get("content") {
+                        if let Some(parts) = content.get("parts") {
+                            if let Some(first_part) = parts.get(0) {
+                                if let Some(text) = first_part.get("text") {
+                                    return Some(text.as_str().unwrap_or("").to_string());
+                                }
+                            }
                         }
                     }
                 }
             } else {
-                println!("[ERRO-GROK] Resposta inválida: {:?}", json);
+                println!("[ERRO-GEMINI] Resposta inválida ou sem candidatos: {:?}", json);
             }
         } else {
-            println!("[ERRO-GROK] Falha ao decodificar JSON da API.");
+            println!("[ERRO-GEMINI] Falha ao decodificar JSON da API.");
         }
     } else {
-        println!("[ERRO-GROK] Falha ao enviar request HTTP.");
+        println!("[ERRO-GEMINI] Falha ao enviar request HTTP.");
     }
 
     None
 }
 
 async fn fetch_and_post_news(ctx: &Context, channel_id: ChannelId) {
-    println!("[*] Limpando as postagens curtas e erros anteriores no Discord...");
-    if let Ok(messages) = channel_id.messages(&ctx.http, |r| r.limit(50)).await {
-        let mut msgs = messages;
-        msgs.sort_by_key(|m| m.timestamp);
-        if msgs.len() > 1 {
-            // Mantém apenas a mais recente (a última enviada)
-            for m in msgs.iter().take(msgs.len() - 1) {
-                let _ = m.delete(&ctx.http).await;
-                tokio::time::sleep(std::time::Duration::from_millis(1000)).await; // Evita rate limit
-            }
-        }
-    }
-    println!("[*] Canal limpo com sucesso!");
-
     let mut history = load_history();
     let req_client = ReqwestClient::builder()
         .user_agent("Mozilla/5.0 Sovereign Intel Bot")
@@ -232,10 +225,10 @@ async fn fetch_and_post_news(ctx: &Context, channel_id: ChannelId) {
     }
     let chosen = all_news.remove(0);
 
-    println!("[+] Curadoria Humana escolheu: {} -> Acionando Grok (xAI)...", chosen.title);
+    println!("[+] Curadoria Humana escolheu: {} -> Acionando Gemini...", chosen.title);
 
     let clean_summary = chosen.summary.replace("<p>", "").replace("</p>", "").replace("<br>", "\n");
-    let final_text = match rewrite_with_grok(&req_client, &chosen.title, &clean_summary).await {
+    let final_text = match rewrite_with_gemini(&req_client, &chosen.title, &clean_summary).await {
         Some(ai_text) => ai_text,
         None => clean_summary,
     };
