@@ -28,7 +28,7 @@ jobs:
       - name: Build & Run Rust Bot
         env:
           DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
         run: |
           cargo run --release
           
