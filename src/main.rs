@@ -107,8 +107,8 @@ async fn rewrite_with_gemini(req_client: &ReqwestClient, title: &str, summary: &
         return None;
     }
 
-    // Usando gemini-flash-latest que sempre aponta para o motor livre e atualizado do Google
-    let url = format!("https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key={}", api_key);
+    // Usando gemini-2.5-flash explícito
+    let url = format!("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={}", api_key);
     
     let prompt = format!(
         "Você é um renomado jornalista investigativo e analista político brasileiro. \
@@ -130,34 +130,50 @@ async fn rewrite_with_gemini(req_client: &ReqwestClient, title: &str, summary: &
         }
     });
 
-    let res = req_client.post(&url)
-        .header("Content-Type", "application/json")
-        .json(&body)
-        .send()
-        .await;
+    let mut attempt = 0;
+    loop {
+        let res = req_client.post(&url)
+            .header("Content-Type", "application/json")
+            .json(&body)
+            .send()
+            .await;
 
-    if let Ok(response) = res {
-        if let Ok(json) = response.json::<serde_json::Value>().await {
-            if let Some(candidates) = json.get("candidates") {
-                if let Some(first) = candidates.get(0) {
-                    if let Some(content) = first.get("content") {
-                        if let Some(parts) = content.get("parts") {
-                            if let Some(first_part) = parts.get(0) {
-                                if let Some(text) = first_part.get("text") {
-                                    return Some(text.as_str().unwrap_or("").to_string());
+        if let Ok(response) = res {
+            if let Ok(json) = response.json::<serde_json::Value>().await {
+                if let Some(candidates) = json.get("candidates") {
+                    if let Some(first) = candidates.get(0) {
+                        if let Some(content) = first.get("content") {
+                            if let Some(parts) = content.get("parts") {
+                                if let Some(first_part) = parts.get(0) {
+                                    if let Some(text) = first_part.get("text") {
+                                        return Some(text.as_str().unwrap_or("").to_string());
+                                    }
                                 }
                             }
                         }
                     }
+                } else if let Some(error) = json.get("error") {
+                    let code = error["code"].as_i64().unwrap_or(0);
+                    if code == 503 && attempt < 3 {
+                        println!("[!] Servidores do Google sobrecarregados (503). Retentando em 5 segundos... (Tentativa {})", attempt + 1);
+                        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                        attempt += 1;
+                        continue;
+                    }
+                    println!("[ERRO-GEMINI] Resposta de Erro da API: {:?}", json);
+                    break;
+                } else {
+                    println!("[ERRO-GEMINI] Formato JSON desconhecido: {:?}", json);
+                    break;
                 }
             } else {
-                println!("[ERRO-GEMINI] Resposta inválida ou sem candidatos: {:?}", json);
+                println!("[ERRO-GEMINI] Falha ao decodificar JSON da API.");
+                break;
             }
         } else {
-            println!("[ERRO-GEMINI] Falha ao decodificar JSON da API.");
+            println!("[ERRO-GEMINI] Falha ao enviar request HTTP.");
+            break;
         }
-    } else {
-        println!("[ERRO-GEMINI] Falha ao enviar request HTTP.");
     }
 
     None
