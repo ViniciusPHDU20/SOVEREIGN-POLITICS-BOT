@@ -107,23 +107,25 @@ async fn rewrite_with_gemini(req_client: &ReqwestClient, title: &str, summary: &
     }
 
     let url = format!("https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro-latest:generateContent?key={}", api_key);
-    let prompt = format!(
-        "Você é um renomado jornalista investigativo e analista político brasileiro. \
-        Acabou de sentar no PC para escrever um comentário afiado nas suas redes sociais (X/Instagram) sobre a notícia abaixo. \
-        Não aja como um robô programado ou um simples resumidor de notícias. Seja humano, orgânico e profundo. \
-        **CRÍTICO:** Escreva um texto jornalístico denso, bem elaborado e rico em detalhes. \
-        Desenvolva pelo menos 2 a 3 parágrafos robustos (cerca de 150 a 250 palavras no total) dissecando o impacto real que esse fato traz para a sociedade. \
-        Construa uma reflexão valiosa, sempre mantendo a imparcialidade jornalística e baseando-se estritamente na verdade dos fatos. \
-        Não invente dados. Use um tom de conversa de alto nível, com poucos (mas cirúrgicos) emojis.\n\n\
-        Título Original: {}\nResumo: {}", title, summary
-    );
+    let system_prompt = "Você é um renomado jornalista investigativo e analista político brasileiro. \
+        Seu objetivo é pegar notícias e escrever comentários afiados, analíticos e profundos nas suas redes sociais (X/Instagram). \
+        Não aja como um robô resumidor. Seja humano, orgânico e intelectual. \
+        **OBRIGAÇÃO CRÍTICA:** Você DEVE escrever um texto longo e denso. Você é OBRIGADO a desenvolver no mínimo 3 parágrafos robustos (cerca de 200 a 300 palavras no total) dissecando o impacto real que o fato traz para a sociedade, economia ou política. \
+        Faça uma análise crítica e reflexiva, mantendo a imparcialidade jornalística e baseando-se estritamente na verdade dos fatos fornecidos. \
+        Não invente dados. Use um tom de conversa de alto nível de um jornalista de elite, com poucos (mas cirúrgicos) emojis. NUNCA responda com apenas uma frase.";
+
+    let user_prompt = format!("Escreva sua coluna analítica profunda sobre esta notícia:\n\nTítulo: {}\nResumo: {}", title, summary);
 
     let body = json!({
+        "systemInstruction": {
+            "parts": [{"text": system_prompt}]
+        },
         "contents": [{
-            "parts": [{"text": prompt}]
+            "role": "user",
+            "parts": [{"text": user_prompt}]
         }],
         "generationConfig": {
-            "temperature": 0.7
+            "temperature": 0.8
         }
     });
 
