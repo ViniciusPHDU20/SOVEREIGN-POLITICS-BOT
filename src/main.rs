@@ -207,11 +207,23 @@ async fn fetch_and_post_news(ctx: &Context, channel_id: ChannelId) {
         None => clean_summary,
     };
 
+    let mut display_title = format!("🖋️ {}", chosen.title);
+    if display_title.len() > 250 {
+        display_title.truncate(247);
+        display_title.push_str("...");
+    }
+
+    let mut display_text = final_text.clone();
+    if display_text.len() > 4000 {
+        display_text.truncate(3997);
+        display_text.push_str("...");
+    }
+
     let res = channel_id.send_message(&ctx.http, |m| {
         m.embed(|e| {
-            let mut embed = e.title(format!("🖋️ {}", chosen.title))
+            let mut embed = e.title(display_title)
              .url(&chosen.link)
-             .description(&final_text)
+             .description(&display_text)
              .color(0x000000) // Preto Clássico (Jornal)
              .author(|a| a.name(&chosen.source_name))
              .footer(|f| f.text("📝 Análise Independente | Sovereign Intel"));
